@@ -39,7 +39,6 @@ class User(db.Model):
     def can(self, permissions):
         return self.role is not None and ((self.role.permission & permissions) == permissions)
 
-
     def verify_password(self, password):
         return bcrypt.check_password_hash(self.password, password)
 
@@ -69,9 +68,12 @@ class Wallet(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     currency = db.Column(db.String(16), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="cascade"))
-    transactions = db.relationship(
-        "Transaction", backref="wallet", lazy="dynamic", cascade="all, delete")
+    user_id = db.Column(db.Integer, db.ForeignKey(
+        "users.id", ondelete="cascade"))
+    sent_transactions = db.relationship(
+        "Transaction", lazy="dynamic", foreign_keys="Transaction.sender")
+    received_transaction = db.relationship(
+        "Transaction", lazy="dynamic", foreign_keys="Transaction.receiver")
 
     @property
     def serialize(self):
@@ -79,13 +81,15 @@ class Wallet(db.Model):
             "id": self.id,
             "currency": self.currency,
             "owner": self.owner.serialize,
-            "balance": self.balance
+            "balance": self.balance,
+            "transa"
         }
 
     @property
     def balance(self):
-        sent = Transaction.query.filter_by(sender=self.owner.id)
-        received = Transaction.query.filter_by(receiver=self.owner.id)
+        sent = self.sent_transactions.filter_by(isapproved=True)
+        received = self.received_transaction.filter_by(
+            receiver=self.owner.id).filter_by(isapproved=True)
         total_sent = 0.0
         total_received = 0.0
         for tx in sent:
@@ -103,12 +107,12 @@ class Transaction(db.Model):
     __tablename__ = "transactions"
 
     id = db.Column(db.Integer, primary_key=True)
-    sender = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    receiver = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    sender = db.Column(db.Integer, db.ForeignKey(
+        "wallets.id",  ondelete="SET NULL"), nullable=False)
+    receiver = db.Column(db.Integer, db.ForeignKey(
+        "wallets.id",  ondelete="SET NULL"), nullable=False)
     amount = db.Column(db.Float, nullable=False)
     currency = db.Column(db.String(16), nullable=False)
-    wallet_id = db.Column(db.Integer, db.ForeignKey(
-        "wallets.id", ondelete="cascade"))
     isapproved = db.Column(db.Boolean, default=True)
 
     def __repr__(self):
