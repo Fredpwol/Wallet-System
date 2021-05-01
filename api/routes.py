@@ -1,10 +1,11 @@
 import logging
 import functools
+import datetime
 
 from flask import request, jsonify, g
 from flask_httpauth import HTTPBasicAuth
 from api import app, db
-from api.model import User, Role, Wallet, Permissions
+from api.model import User, Role, Wallet, Permissions, Transaction, roles
 from api.utils import CurrencyUtils
 
 ok = "success"
@@ -46,7 +47,66 @@ def verify_password(username_or_token, password):
     return True
 
 
-@app.route("/user/register", methods=["POST"])
+@app.route("/users")
+@auth.login_required
+@permission_required(roles["Admin"][0])
+def users():
+    return jsonify([user.serialize for user in User.query.all()])
+
+
+@app.route("/users/<int:id>")
+@auth.login_required
+@permission_required(roles["Admin"][0])
+def get_user(id):
+    user = User.query.get(id)
+    if user is None:
+        return jsonify(status=error, message="User not Found!"), 400
+    return jsonify(user.serialize), 200
+
+
+@app.route("/users/<int:id>/change-role")
+@auth.login_required
+@permission_required(roles["Admin"][0])
+def change_user_role(id):
+    role = request.args.get("role")
+    user = User.query.get(id)
+    if user is None:
+        return jsonify(status=error, message="User not Found!"), 400
+    if not role:
+        return jsonify(status=error, message="Please Input a Role Argument!"), 400
+    if role.lower() in [r.lower() for r in roles.keys()]:
+        user.role_id = Role.query.filter_by(name=role.capitalize()).first().id
+    else:
+        return jsonify(status=error, message="Please input a valid role"), 400
+    db.session.commit()
+    return jsonify(status=ok), 200
+
+
+@app.route("/approve-transactions", methods=["POST"])
+@auth.login_required
+@permission_required(roles["Admin"][0])
+def approve_transaction():
+    try:
+        ids = request.args['tx'].split(",")
+        for _id in ids:
+            tx = Transaction.query.filter_by(id=_id).first()
+            if tx is None:
+                return jsonify(status=error, message=f"Invalid Transaction id ({_id})"), 400
+            tx.isapproved = True
+            db.session.commit()
+            return jsonify(status=ok), 200
+    except KeyError:
+        return jsonify(status=error, message="Missing keyword argument 'tx'"), 400
+
+
+@app.route("/transactions", methods=["GET"])
+@auth.login_required
+@permission_required(roles["Admin"][0])
+def transaction():
+    return jsonify([tx.serialize for tx in Transaction.query.all()]), 200
+
+
+@app.route("/users/register", methods=["POST"])
 def register():
     data = request.get_json()
     required_keys = ["username", "password", "email", "currency"]
@@ -78,7 +138,7 @@ def register():
     return jsonify(status=ok, token=user.generate_web_token()), 201
 
 
-@app.route("/user/login", methods=["POST"])
+@app.route("/users/login", methods=["POST"])
 def login():
     data = request.get_json()
     required_keys = ["username", "password"]
@@ -137,5 +197,68 @@ def create_wallet():
         user.wallet.append(wallet)
         return jsonify(status=ok, data=wallet.serialize)
     except Exception as e:
+        logging.error(e)
+        return jsonify(status=error, message=str(e)), 400
+
+
+@app.route("/fund", methods=["POST"])
+@auth.login_required
+def fund_wallet():
+    try:
+        required = ["currency", "amount", "receiverid"]
+        data = request.get_json()
+        if not all([rq in data.keys() for rq in required]):
+            return jsonify(status=error, message="Missing Required JSON Field!")
+        amount = data["amount"]
+        currency = data["currency"]
+        receiver_id = data["receiverid"]
+        if not CurrencyUtils.iscurrency_valid(currency):
+            return jsonify(status=error, message="Please Enter a valid Currency code"), 400
+        if g.user.role.name != "Admin":
+            sender_wallet = g.user.wallet.filter_by(currency=currency).first()
+
+            if sender_wallet is None:
+                sender_wallet = g.user.wallet.filter_by(
+                    currency=g.user.main_currency)
+                if CurrencyUtils.convert_currency(sender_wallet.currency.upper(), currency.upper(), sender_wallet.balance) < amount:
+                    return jsonify(status=error, message="Insufficient fund!"), 403
+                amount = CurrencyUtils.convert_currency(
+                    sender_wallet.currency.upper(), currency.upper(), amount)
+            else:
+                if sender_wallet.balance < amount:
+                    return jsonify(status=error, message="Insufficient fund!"), 403
+
+        receiver = User.query.filter_by(id=receiver_id).first()
+        if not receiver:
+            return jsonify(status=error, message=f"Sorry User with id {receiver_id} does not exsits!"), 400
+        if receiver.role.name == "Admin":
+            return jsonify(status=unauthorized, message="Sorry Admin account can't be funded!"), 403
+        receiver_wallet = receiver.wallet.filter_by(currency=currency).first()
+
+        if receiver_wallet is None:
+            if receiver.role.name == "Elite":
+                new_wallet = Wallet(currency=currency, user_id=receiver.id)
+                db.session.add(new_wallet)
+                db.session.commit()
+                receiver_wallet = new_wallet
+            elif receiver.role.name == "Noob":
+                receiver_wallet = receiver.wallet.filter_by(
+                    currency=receiver.main_currency).first()
+        if g.user.role.name == "Admin":
+            tx = Transaction(receiver=receiver_wallet.id, sender=None,
+                             amount=amount, currency=currency, at=datetime.datetime.utcnow())
+        else:
+            tx = Transaction(receiver=receiver_wallet.id, sender=sender_wallet.id,
+                             amount=amount, currency=currency, at=datetime.datetime.utcnow())
+
+        if receiver.role.name == "Noob":
+            tx.isapproved = False
+
+        db.session.add(tx)
+        db.session.commit()
+
+        return jsonify(status=ok, data=tx.serialize)
+
+    except SyntaxError as e:
         logging.error(e)
         return jsonify(status=error, message=str(e)), 400
