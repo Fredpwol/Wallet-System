@@ -12,4 +12,4 @@ app.config.from_object(os.environ["APP_CONFIG"])
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
 
-from api.model import *
+import api.routes
