@@ -1,6 +1,6 @@
 import logging
 
-from flask import request, jsonify
+from flask import request, jsonify, g
 from flask_httpauth import HTTPBasicAuth
 from api import app, db
 from api.model import User, Role, Wallet
@@ -24,8 +24,6 @@ def verify_password(username_or_token, password):
     if not (username_or_token or password):
         return False
     user = User.verify_web_token(username_or_token)
-    print(user)
-    print("username", username_or_token)
     if not user:
         user = User.query.filter_by(username=username_or_token).first()
         if (not user) or (not user.validate_password(password)):
@@ -65,25 +63,28 @@ def register():
     return jsonify(status=ok, token=user.generate_web_token()), 201
 
 
-@app.route("/user/login", method=["POST"])
+@app.route("/user/login", methods=["POST"])
 def login():
     data = request.get_json()
     required_keys = ["username", "password"]
     if not all([rqkey in data for rqkey in required_keys]):
         return jsonify(status=error, message="Sorry missing JSON field!"), 400
     try:
-        user = User.query.filter_by(username=data["username"]).first() 
-        if user is None or not user.verify_password(password):
+        user = User.query.filter_by(username=data["username"]).first()
+        if user is None or not user.verify_password(data["password"]):
             return jsonify(status=error, message="Invalid username or password")
-        
-        
-
-        if not CurrencyUtils.iscurrency_valid(data["currency"]):
-            return jsonify(sattus=error, message="Sorry Please Enter a Valid currency code!"), 400
-        isadmin = data.get("isadmin", False)
-        user = User(username=data["username"], password=data["password"],
-                    email=data["email"], currency=data["currency"], isadmin=isadmin)
     except Exception as e:
         logging.error(e)
         return jsonify(status=error, message=str(e)), 400
 
+    return jsonify(status=ok, token=user.generate_web_token(), user=user.serialize), 201
+
+
+@app.route("/wallets")
+@auth.login_required
+def get_wallet():
+    try:
+        return jsonify([wallet.serialize for wallet in g.user.wallet])
+    except Exception as e:
+        logging.error(e)
+        return jsonify(status=error, message=str(e)), 400
