@@ -1,10 +1,27 @@
 import logging
+import functools
 
 from flask import request, jsonify, g
 from flask_httpauth import HTTPBasicAuth
 from api import app, db
-from api.model import User, Role, Wallet
+from api.model import User, Role, Wallet, Permissions
 from api.utils import CurrencyUtils
+
+ok = "success"
+error = "error"
+unauthorized = "Unauthorized"
+
+
+def permission_required(permission):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            if g.user.can(permission):
+                return func(*args, **kwargs)
+            else:
+                return jsonify(status=unauthorized, message="Permission denied!"), 401
+        return wrapper
+    return decorator
 
 
 @app.before_first_request
@@ -14,9 +31,6 @@ def insert_roles():
 
 
 auth = HTTPBasicAuth()
-
-ok = "success"
-error = "error"
 
 
 @auth.verify_password
@@ -55,10 +69,11 @@ def register():
 
     db.session.add(user)
     db.session.commit()
-    default_wallet = Wallet(currency=data["currency"], user_id=user.id)
-    db.session.add(default_wallet)
-    db.session.commit()
-    user.wallet.append(default_wallet)
+    if not isadmin:
+        default_wallet = Wallet(currency=data["currency"], user_id=user.id)
+        db.session.add(default_wallet)
+        db.session.commit()
+        user.wallet.append(default_wallet)
 
     return jsonify(status=ok, token=user.generate_web_token()), 201
 
@@ -82,9 +97,45 @@ def login():
 
 @app.route("/wallets")
 @auth.login_required
+@permission_required(Permissions.OWN_WALLET)
 def get_wallet():
     try:
-        return jsonify([wallet.serialize for wallet in g.user.wallet])
+        currency = request.args.get("currency", None)
+        if currency is not None:
+            wallets = g.user.wallet.filter_by(currency=currency)
+        else:
+            wallets = g.user.wallet
+        return jsonify(status=ok, data=[wallet.serialize for wallet in wallets]), 200
+    except Exception as e:
+        logging.error(e)
+        return jsonify(status=error, message=str(e)), 400
+
+
+@app.route("/wallets/<int:id>")
+@auth.login_required
+def get_wallet_by_id(id):
+    try:
+        wallet = g.user.wallet.filter_by(id=id).first()
+        if wallet:
+            return jsonify(status=ok, data=wallet.serialize), 200
+        else:
+            return jsonify(status=error, message=f"User does not own a wallet with the id ({id})")
+    except Exception as e:
+        logging.error(e)
+        return jsonify(status=error, message=str(e)), 400
+
+
+@app.route("/wallet/create", methods=["POST"])
+@auth.login_required
+@permission_required(Permissions.CREATE_WALLET)
+def create_wallet():
+    try:
+        data = request.get_json()
+        wallet = Wallet(currency=data["currency"], user_id=g.user.id)
+        db.session.add(wallet)
+        db.session.commit()
+        user.wallet.append(wallet)
+        return jsonify(status=ok, data=wallet.serialize)
     except Exception as e:
         logging.error(e)
         return jsonify(status=error, message=str(e)), 400
