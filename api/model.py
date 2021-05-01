@@ -25,6 +25,16 @@ class User(db.Model):
             else:
                 self.role = Role.query.filter_by(default=True).first()
 
+    @property
+    def serialize(self):
+        return {
+            "id": self.id,
+            "username" : self.username,
+            "email": self.email,
+            "main_currency": self.main_currency,
+            "role": self.role.name
+        }
+
     def verify_password(self, password):
         return bcrypt.check_password_hash(self.password, password)
 
@@ -57,18 +67,27 @@ class Wallet(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="cascade"))
     transactions = db.relationship(
         "Transaction", backref="wallet", lazy="dynamic", cascade="all, delete")
+    
+    @property
+    def serialize(self):
+        return {
+            "id": self.id,
+            "currency": self.currency,
+            "owner": self.owner.serialize,
+            "balance": self.balance
+        }
 
     @property
     def balance(self):
         sent = Transaction.query.filter_by(sender=self.owner.id)
-        received = Transaction.query.filter_by(recever=self.owner.id)
+        received = Transaction.query.filter_by(receiver=self.owner.id)
         total_sent = 0.0
-        total_recieved = 0.0
+        total_received = 0.0
         for tx in sent:
             total_sent += tx.amount
         for tx in received:
-            total_recieved += tx.amount
-        return total_recieved - total_sent
+            total_received += tx.amount
+        return total_received - total_sent
 
     def __repr__(self):
         return f"Wallet({self.currency}, {self.balance})"
@@ -80,14 +99,14 @@ class Transaction(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     sender = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    reciver = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    receiver = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     amount = db.Column(db.Float, nullable=False)
     currency = db.Column(db.String(16), nullable=False)
     wallet_id = db.Column(db.Integer, db.ForeignKey("wallets.id", ondelete="cascade"))
     isapproved = db.Column(db.Boolean, default=True)
 
     def __repr__(self):
-        return f"Transaction({self.sender}, {self.recever}, {self.amount})"
+        return f"Transaction({self.sender}, {self.receiver}, {self.amount})"
 
 
 class Permissions:
@@ -107,7 +126,7 @@ class Role(db.Model):
     name = db.Column(db.String(32), nullable=False)
     permission = db.Column(db.Integer, nullable=False)
     default = db.Column(db.Boolean, default=False)
-    users = db.relationship("User", backref="role")
+    users = db.relationship("User", backref="role", lazy="dynamic")
 
     @staticmethod
     def initialize_roles():
@@ -129,7 +148,7 @@ class Role(db.Model):
         }
 
         for role in roles:
-            if Role.query.filter_by(name=role) is None:
+            if Role.query.filter_by(name=role).first() is None:
                 r = Role(
                     name=role, permission=roles[role][0], default=roles[role][1])
                 db.session.add(r)
