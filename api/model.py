@@ -10,7 +10,8 @@ class User(db.Model):
     username = db.Column(db.String(30), nullable=False, unique=True)
     email = db.Column(db.String(255), nullable=False, unique=True)
     password = db.Column(db.String(255), nullable=False)
-    wallet = db.relationship("Wallet", backref="owner", lazy="dynamic", cascade="all, delete", passive_deletes=True)
+    wallet = db.relationship("Wallet", backref="owner", lazy="dynamic",
+                             cascade="all, delete", passive_deletes=True)
     main_currency = db.Column(db.String(16), nullable=False)
     role_id = db.Column(db.Integer, db.ForeignKey("roles.id"))
 
@@ -29,11 +30,15 @@ class User(db.Model):
     def serialize(self):
         return {
             "id": self.id,
-            "username" : self.username,
+            "username": self.username,
             "email": self.email,
             "main_currency": self.main_currency,
             "role": self.role.name
         }
+
+    def can(self, permissions):
+        return self.role is not None and ((self.role.permission & permissions) == permissions)
+
 
     def verify_password(self, password):
         return bcrypt.check_password_hash(self.password, password)
@@ -67,7 +72,7 @@ class Wallet(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="cascade"))
     transactions = db.relationship(
         "Transaction", backref="wallet", lazy="dynamic", cascade="all, delete")
-    
+
     @property
     def serialize(self):
         return {
@@ -102,7 +107,8 @@ class Transaction(db.Model):
     receiver = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     amount = db.Column(db.Float, nullable=False)
     currency = db.Column(db.String(16), nullable=False)
-    wallet_id = db.Column(db.Integer, db.ForeignKey("wallets.id", ondelete="cascade"))
+    wallet_id = db.Column(db.Integer, db.ForeignKey(
+        "wallets.id", ondelete="cascade"))
     isapproved = db.Column(db.Boolean, default=True)
 
     def __repr__(self):
