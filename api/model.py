@@ -122,12 +122,15 @@ class Transaction(db.Model):
     @property
     def serialize(self):
         sender = None
+        receiver = None
         if self.sender is not None:
             sender = Wallet.query.get(self.sender).owner.serialize
+        if self.receiver is not None:
+            receiver = Wallet.query.get(self.receiver).owner.serialize
         return {
             "id": self.id,
             "sender": sender,
-            "receiver": Wallet.query.get(self.receiver).owner.serialize,
+            "receiver": receiver,
             "amount": self.amount,
             "currency": self.currency,
             "isapproved": self.isapproved
