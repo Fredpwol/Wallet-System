@@ -282,8 +282,8 @@ class Role(db.Model):
     __tablename__ = "roles"
 
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(32), nullable=False, )
-    permission = db.Column(db.Integer, nullable=False,)
+    name = db.Column(db.String(32), nullable=False, unique=True)
+    permission = db.Column(db.Integer, nullable=False, unique=True)
     default = db.Column(db.Boolean, default=False)
     users = db.relationship("User", backref="role", lazy="dynamic")
 
