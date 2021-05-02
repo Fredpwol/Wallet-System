@@ -5,6 +5,29 @@ from itsdangerous import TimedJSONWebSignatureSerializer as Serializer, BadSigna
 
 
 class User(db.Model):
+    """
+    The User Model for representing users and their relations with other objects.
+    A user have 3 possible roles the can be:
+    1. Noob
+    2. Elite
+    3. Admin
+
+    The Noob role is assigned to a user by default on registration but can be changed later by
+    an admin.
+    The main_currency attribute is used to create a default wallet for the user on registration.
+    all other attributes are self explaintory.
+
+    Attributes
+    ----------
+    username: sting
+
+    email:string
+
+    password:string
+
+    role_id :int
+    """
+
     __tablename__ = "users"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -29,6 +52,9 @@ class User(db.Model):
 
     @property
     def serialize(self):
+        """
+        returns a JSON serializable representation of the User
+        """
         return {
             "id": self.id,
             "username": self.username,
@@ -38,17 +64,47 @@ class User(db.Model):
         }
 
     def can(self, permissions):
+        """
+        Given a permission returns if the user can perform it based on the user role by
+        perfoming some bitwise operations.
+
+        Parameters
+        ----------
+        permissions: int
+        """
         return self.role is not None and ((self.role.permission & permissions) == permissions)
 
     def verify_password(self, password):
+        """
+        Verifies a user password, with a supplied password
+
+        Parameters
+        ----------
+        password: string
+        """
         return bcrypt.check_password_hash(self.password, password)
 
     def generate_web_token(self, exp=2592000):
+        """
+        Generates a jwt for a user
+
+        Parameters
+        ----------
+        exp: int, default=2592000
+            Token expiry date.
+        """
         serializer = Serializer(app.config["SECRET_KEY"], expires_in=exp)
         return serializer.dumps({"id": self.id}).decode("utf-8")
 
     @staticmethod
     def verify_web_token(token):
+        """
+        Verifies a token and returns a User object if the token is valid.
+
+        Parameters
+        ----------
+        token: string
+        """
         serializer = Serializer(app.config['SECRET_KEY'])
         try:
             data = serializer.loads(token)
@@ -64,6 +120,19 @@ class User(db.Model):
 
 
 class Wallet(db.Model):
+    """
+    Wallet object for performing transactions and storing cash.
+
+    Attributes
+    ----------
+    currency: string
+
+    user_id: int
+
+    sent_transactions: queyset
+
+    received_transactions: queryset
+    """
 
     __tablename__ = "wallets"
 
@@ -78,6 +147,9 @@ class Wallet(db.Model):
 
     @property
     def serialize(self):
+        """
+        returns a JSON serializable representation of a Wallet
+        """
         return {
             "id": self.id,
             "currency": self.currency,
@@ -88,6 +160,9 @@ class Wallet(db.Model):
 
     @property
     def balance(self):
+        """
+        returns a balance of the wallet from all transaction.
+        """
         sent = [CurrencyUtils.convert_currency(
             tx.currency, self.currency, tx.amount) for tx in self.sent_transactions.filter_by(isapproved=True)]
         received = [CurrencyUtils.convert_currency(
@@ -106,6 +181,9 @@ class Wallet(db.Model):
 
 
 class Transaction(db.Model):
+    """
+    Transactions that are done between wallets are stored by this model.
+    """
 
     __tablename__ = "transactions"
 
@@ -121,6 +199,9 @@ class Transaction(db.Model):
 
     @property
     def serialize(self):
+        """
+        returns a JSON serializable representation of a Transaction
+        """
         sender = None
         receiver = None
         if self.sender is not None:
@@ -141,6 +222,23 @@ class Transaction(db.Model):
 
 
 class Permissions:
+    """
+    A Permission class for holding class variables that represent permissions.
+
+    Attributes
+    ----------
+    OWN_WALLET
+
+    CREATE_WALLET
+
+    CHANGE_CURRENCY
+
+    CAN_WITHDRAW
+
+    APRROVE_FUNDS
+
+    CHANGE_ROLE 
+    """
     OWN_WALLET = 0x01
     CREATE_WALLET = 0x02
     CHANGE_CURRENCY = 0x04
@@ -168,17 +266,32 @@ roles = {
 
 
 class Role(db.Model):
+    """
+    The role used to give restrict user from some application functions.
 
+    Attributes
+    ----------
+    name: str
+
+    permissions: int
+
+    default: bool, default=False
+
+    users: queryset
+    """
     __tablename__ = "roles"
 
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(32), nullable=False)
-    permission = db.Column(db.Integer, nullable=False)
+    name = db.Column(db.String(32), nullable=False, )
+    permission = db.Column(db.Integer, nullable=False,)
     default = db.Column(db.Boolean, default=False)
     users = db.relationship("User", backref="role", lazy="dynamic")
 
     @staticmethod
     def initialize_roles():
+        """
+        This is used to initialize roles in a db, this should only be called once in your application
+        """
         for role in roles:
             if Role.query.filter_by(name=role).first() is None:
                 r = Role(
