@@ -94,8 +94,12 @@ def change_user_maincurrency(id):
         return jsonify(status=error, message="Please Input a currency"), 400
     if not CurrencyUtils.iscurrency_valid(currency):
         return jsonify(status=error, message="Please Enter a valid Currency code"), 400
+    if not user.wallet.filter_by(currency=currency).first():
+        new_wallet = Wallet(currency=currency, user_id=receiver.id)
+        db.session.add(new_wallet)
+        db.session.commit()
 
-    user.main_currency = currency.upper()
+    user.main_currency = currency.lower()
     db.session.commit()
     return jsonify(status=ok), 200
 
@@ -148,7 +152,7 @@ def register():
             return jsonify(sattus=error, message="Sorry Please Enter a Valid currency code!"), 400
         isadmin = data.get("isadmin", False)
         user = User(username=data["username"], password=data["password"],
-                    email=data["email"], currency=data["currency"].upper(), isadmin=isadmin)
+                    email=data["email"], currency=data["currency"].lower(), isadmin=isadmin)
     except Exception as e:
         logging.error(e)
         return jsonify(status=error, message=str(e)), 400
@@ -269,7 +273,7 @@ def fund_wallet():
                 receiver_wallet = new_wallet
             elif receiver.role.name == "Noob":
                 receiver_wallet = receiver.wallet.filter_by(
-                    currency=receiver.main_currency).first()
+                    currency=receiver.main_currency.lower()).first()
         if g.user.role.name == "Admin":
             tx = Transaction(receiver=receiver_wallet.id, sender=None,
                              amount=amount, currency=currency, at=datetime.datetime.utcnow())
@@ -300,9 +304,9 @@ def withdraw():
         return jsonify(status=error, message="Missing required JSON field!"), 400
     currency = data["currency"]
     amount = data["amount"]
-    wallet = g.user.wallet.filter_by(currency=currency)
+    wallet = g.user.wallet.filter_by(currency=currency).first()
     if wallet is None or (g.user.role.name == "Elite" and (bool(wallet) and wallet.balance < amount)):
-        wallet = g.user.wallet.filter_by(currency=g.user.main_currency)
+        wallet = g.user.wallet.filter_by(currency=g.user.main_currency.lower()).first()
         amount = CurrencyUtils.convert_currency(
             currency, wallet.currency, amount)
     if wallet.balance < amount:
