@@ -43,7 +43,7 @@ class User(db.Model):
     def verify_password(self, password):
         return bcrypt.check_password_hash(self.password, password)
 
-    def generate_web_token(self, exp=43200):
+    def generate_web_token(self, exp=2592000):
         serializer = Serializer(app.config["SECRET_KEY"], expires_in=exp)
         return serializer.dumps({"id": self.id}).decode("utf-8")
 
