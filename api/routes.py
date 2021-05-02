@@ -122,7 +122,14 @@ def approve_transaction():
 @auth.login_required
 @permission_required(roles["Admin"][0])
 def transaction():
-    return jsonify([tx.serialize for tx in Transaction.query.all()]), 200
+    only = request.args.get("only", None)
+    transactions = Transaction.query.all()
+    if bool(only):
+        if not only in ["approved", "unapproved"]:
+            return jsonify(), 400
+        approved = True if only == "approved" else False
+        transactions = Transaction.query.filter_by(isapproved=approved)
+    return jsonify([tx.serialize for tx in transactions ]), 200
 
 
 @app.route("/users/register", methods=["POST"])
