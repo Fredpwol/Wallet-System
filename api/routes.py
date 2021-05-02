@@ -66,7 +66,7 @@ def get_user(id):
 
 @app.route("/users/<int:id>/change-role")
 @auth.login_required
-@permission_required(roles["Admin"][0])
+@permission_required(Permissions.CHANGE_ROLE)
 def change_user_role(id):
     role = request.args.get("role")
     user = User.query.get(id)
@@ -82,11 +82,30 @@ def change_user_role(id):
     return jsonify(status=ok), 200
 
 
+@app.route("/users/<int:id>/change-maincurrency")
+@auth.login_required
+@permission_required(Permissions.CHANGE_CURRENCY)
+def change_user_maincurrency(id):
+    currency = request.args.get("currency")
+    user = User.query.get(id)
+    if user is None:
+        return jsonify(status=error, message="User not Found!"), 400
+    if not currency:
+        return jsonify(status=error, message="Please Input a currency"), 400
+    if not CurrencyUtils.iscurrency_valid(currency):
+        return jsonify(status=error, message="Please Enter a valid Currency code"), 400
+
+    user.main_currency = currency.upper()
+    db.session.commit()
+    return jsonify(status=ok), 200
+
+
 @app.route("/approve-transactions", methods=["POST"])
 @auth.login_required
 @permission_required(roles["Admin"][0])
 def approve_transaction():
     try:
+
         ids = request.args['tx'].split(",")
         for _id in ids:
             tx = Transaction.query.filter_by(id=_id).first()
@@ -122,7 +141,7 @@ def register():
             return jsonify(sattus=error, message="Sorry Please Enter a Valid currency code!"), 400
         isadmin = data.get("isadmin", False)
         user = User(username=data["username"], password=data["password"],
-                    email=data["email"], currency=data["currency"], isadmin=isadmin)
+                    email=data["email"], currency=data["currency"].upper(), isadmin=isadmin)
     except Exception as e:
         logging.error(e)
         return jsonify(status=error, message=str(e)), 400
@@ -262,3 +281,30 @@ def fund_wallet():
     except SyntaxError as e:
         logging.error(e)
         return jsonify(status=error, message=str(e)), 400
+
+
+@app.route("/withdraw", methods=["POST"])
+@auth.login_required
+@permission_required(Permissions.CAN_WITHDRAW)
+def withdraw():
+    data = request.get_json()
+    required = ["currency", "amount"]
+    if not all([rq in data for rq in required]):
+        return jsonify(status=error, message="Missing required JSON field!"), 400
+    currency = data["currency"]
+    amount = data["amount"]
+    wallet = g.user.wallet.filter_by(currency=currency)
+    if wallet is None or (g.user.role.name == "Elite" and (bool(wallet) and wallet.balance < amount)):
+        wallet = g.user.wallet.filter_by(currency=g.user.main_currency)
+        amount = CurrencyUtils.convert_currency(
+            currency, wallet.currency, amount)
+    if wallet.balance < amount:
+        return jsonify("Insufficent Funds!"), 400
+    isapproved = True if g.user.role.name != "Noob" else False
+    tx = Transaction(sender=wallet.id, receiver=None, at=datetime.datetime.utcnow(),
+     amount=amount, currency=wallet.currency, isapproved=isapproved)
+    db.session.add(tx)
+    db.session.commit()
+    return jsonify(status=ok, message="Transaction successful."), 200
+
+
