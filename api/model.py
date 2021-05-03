@@ -169,7 +169,6 @@ class Wallet(db.Model):
             tx.currency, self.currency, tx.amount) for tx in self.received_transaction.filter_by(isapproved=True)]
         total_sent = 0.0
         total_received = 0.0
-        print(sent, received)
         for tx in sent:
             total_sent += tx
         for tx in received:
