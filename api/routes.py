@@ -440,6 +440,11 @@ def fund_wallet():
     ---
     post:
       summary: fund a particular wallet
+      description: sends funds to a particular user given the user id the amount will be 
+        removed from the wallet with the respective currency, if not it falls to the default wallet.
+        if the sender is admin no money will be deducted from any wallet else an amount will be deducted 
+        from the sender wallet with the respective currency. so that means that admin can geenrate cash while
+        other users can perform transactions between wallets.
       requestBody:
         required: true
         content:
@@ -523,6 +528,9 @@ def withdraw():
     ---
     post:
       summary: Withdraw from a particular wallet 
+      description: withdraws money from a user from a wallet with the respective suplied currency. if an Elite class user withdraws
+        the amount will instanstly be deducted from the wallet with the respective currency if the wallet does not exists or has isufficient
+        funds it falls back and withdraws the equivalent of that in the main currency.
       requestBody:
         required: true
         content:
