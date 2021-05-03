@@ -1,4 +1,6 @@
 # Wallet-System
+![build badge](https://travis-ci.com/Fredpwol/Wallet-System.svg?branch=master)
+
 A E-wallet system for transfering and storing cash in multiple currencies. access is limited by roles
 
 ## Getting Started
