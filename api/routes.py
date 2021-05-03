@@ -46,6 +46,9 @@ def verify_password(username_or_token, password):
     g.user = user
     return True
 
+@app.route("/")
+def index():
+    return "Hello welcome to your life!!"
 
 @app.route("/users")
 @auth.login_required
