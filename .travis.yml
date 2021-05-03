@@ -12,3 +12,8 @@ install:
 # command to run tests
 script:
   - python test.py
+env:
+  - DATABASE_URL=postgresql://postgres:pandroid016@localhost:5432/wallet_system
+  - SECRET_KEY=1a803489ec548857a6b8c43c51ba25095b5317c7be99068f41b19622611ca2ba
+  - APP_CONFIG=api.config.TestingConfig
+  - API_KEY=0ebd680e855a6a001abfb621
