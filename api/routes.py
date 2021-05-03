@@ -1,12 +1,16 @@
 import logging
 import functools
 import datetime
+import os
 
 from flask import request, jsonify, g
 from flask_httpauth import HTTPBasicAuth
 from api import app, db
 from api.model import User, Role, Wallet, Permissions, Transaction, roles
 from api.utils import CurrencyUtils
+
+from api.api_spec import spec
+from api.swagger import swagger_ui_blueprint, SWAGGER_URL
 
 ok = "success"
 error = "error"
@@ -23,6 +27,14 @@ def permission_required(permission):
                 return jsonify(status=unauthorized, message="Permission denied!"), 401
         return wrapper
     return decorator
+
+
+@app.route("/api/swagger.json")
+def create_swagger_spec():
+    return jsonify(spec.to_dict())
+
+
+app.register_blueprint(swagger_ui_blueprint, url_prefix=SWAGGER_URL)
 
 
 @app.before_first_request
@@ -46,14 +58,30 @@ def verify_password(username_or_token, password):
     g.user = user
     return True
 
+
 @app.route("/")
 def index():
     return "Hello welcome to your life!!"
+
 
 @app.route("/users")
 @auth.login_required
 @permission_required(roles["Admin"][0])
 def users():
+    """
+    ---
+    get:
+      summary: returns a list of users
+      responses:
+        '200':
+          description: registration successful
+          content:
+            application/json:
+                schema: Generated
+      tags:
+          - admin
+          - user
+    """
     return jsonify([user.serialize for user in User.query.all()])
 
 
@@ -61,16 +89,51 @@ def users():
 @auth.login_required
 @permission_required(roles["Admin"][0])
 def get_user(id):
+    """
+    ---
+    get:
+      parameters:
+        - name: id
+          in: path
+          required: true
+      summary: returns a users object from the id
+      responses:
+        '200':
+          description:  fetched user
+          content:
+            application/json:
+                schema: Generated
+      tags:
+          - admin
+          - user
+    """
     user = User.query.get(id)
     if user is None:
         return jsonify(status=error, message="User not Found!"), 400
-    return jsonify(user.serialize), 200
+    return jsonify(data=user.serialize, status=ok), 200
 
 
 @app.route("/users/<int:id>/change-role", methods=["POST"])
 @auth.login_required
 @permission_required(Permissions.CHANGE_ROLE)
 def change_user_role(id):
+    """
+    ---
+    post:
+      parameters:
+        - name: id
+          in: path
+          required: true
+      summary: change the role of a particular user
+      responses:
+        '200':
+          description: change role successful
+          content:
+            application/json:
+                schema: Generated
+      tags:
+          - admin
+    """
     role = request.args.get("role")
     user = User.query.get(id)
     if user is None:
@@ -82,13 +145,30 @@ def change_user_role(id):
     else:
         return jsonify(status=error, message="Please input a valid role"), 400
     db.session.commit()
-    return jsonify(status=ok), 200
+    return jsonify(status=ok, message="User role changed sucessfully"), 200
 
 
 @app.route("/users/<int:id>/change-maincurrency", methods=["POST"])
 @auth.login_required
 @permission_required(Permissions.CHANGE_CURRENCY)
 def change_user_maincurrency(id):
+    """
+    ---
+    post:
+      parameters:
+        - name: id
+          in: path
+          required: true
+      summary: change the main currency a particular user
+      responses:
+        '200':
+          description: success
+          content:
+            application/json:
+                schema: Generated
+      tags:
+          - admin
+    """
     currency = request.args.get("currency")
     user = User.query.get(id)
     if user is None:
@@ -104,15 +184,32 @@ def change_user_maincurrency(id):
 
     user.main_currency = currency.lower()
     db.session.commit()
-    return jsonify(status=ok), 200
+    return jsonify(status=ok, message="Maincurrency changed successfully"), 200
 
 
 @app.route("/approve-transactions", methods=["POST"])
 @auth.login_required
 @permission_required(roles["Admin"][0])
 def approve_transaction():
+    """
+    ---
+    post:
+      parameters:
+        - name: tx
+          in: query
+          required: true
+          description: id of a unapproved transactions
+      summary: Approve a transaction from it's id
+      responses:
+        '200':
+          description: success
+          content:
+            application/json:
+                schema: TransactionResponse
+      tags:
+          - admin
+    """
     try:
-
         ids = request.args['tx'].split(",")
         for _id in ids:
             tx = Transaction.query.filter_by(id=_id).first()
@@ -129,6 +226,24 @@ def approve_transaction():
 @auth.login_required
 @permission_required(roles["Admin"][0])
 def transaction():
+    """
+    ---
+    get:
+      parameters:
+        - name: only
+          in: query
+          required: true
+          description: specify to filter out approved or unapproved transactions
+      summary: get a list of all transactions
+      responses:
+        '200':
+          description: success
+          content:
+            application/json:
+                schema: TransactionResponse
+      tags:
+          - admin
+    """
     only = request.args.get("only", None)
     transactions = Transaction.query.all()
     if bool(only):
@@ -136,11 +251,29 @@ def transaction():
             return jsonify(), 400
         approved = True if only == "approved" else False
         transactions = Transaction.query.filter_by(isapproved=approved)
-    return jsonify([tx.serialize for tx in transactions ]), 200
+    return jsonify([tx.serialize for tx in transactions]), 200
 
 
 @app.route("/users/register", methods=["POST"])
 def register():
+    """
+    ---
+    post:
+      summary: register user
+      requestBody:
+        required: true
+        content:
+            application/json:
+                schema: Register
+      responses:
+        '200':
+          description: registration successful
+          content:
+            application/json:
+              schema: AuthResponse
+      tags:
+          - user
+    """
     data = request.get_json()
     required_keys = ["username", "password", "email", "currency"]
     if not all([rqkey in data for rqkey in required_keys]):
@@ -173,6 +306,24 @@ def register():
 
 @app.route("/users/login", methods=["POST"])
 def login():
+    """
+    ---
+    post:
+      summary: login user
+      requestBody:
+        required: true
+        content:
+            application/json:
+                schema: Login
+      responses:
+        '200':
+          description: registration successful
+          content:
+            application/json:
+              schema: AuthResponse
+      tags:
+          - user
+    """
     data = request.get_json()
     required_keys = ["username", "password"]
     if not all([rqkey in data for rqkey in required_keys]):
@@ -192,6 +343,24 @@ def login():
 @auth.login_required
 @permission_required(Permissions.OWN_WALLET)
 def get_wallet():
+    """
+    ---
+    get:
+      parameters:
+        - name: currency
+          in: query
+          required: true
+          description: filter out by currency
+      summary: gets a list of all wallets
+      responses:
+        '200':
+          description: success
+          content:
+            application/json:
+                schema: WalletResponse
+      tags:
+          - wallet
+    """
     try:
         currency = request.args.get("currency", None)
         if currency is not None:
@@ -207,6 +376,23 @@ def get_wallet():
 @app.route("/wallets/<int:id>")
 @auth.login_required
 def get_wallet_by_id(id):
+    """
+    ---
+    get:
+      parameters:
+        - name: id
+          in: path
+          required: true
+      summary: get a wallet by id
+      responses:
+        '200':
+          description: success
+          content:
+            application/json:
+                schema: WalletResponse
+      tags:
+          - wallet
+    """
     try:
         wallet = g.user.wallet.filter_by(id=id).first()
         if wallet:
@@ -222,13 +408,26 @@ def get_wallet_by_id(id):
 @auth.login_required
 @permission_required(Permissions.CREATE_WALLET)
 def create_wallet():
+    """
+    ---
+    post:
+      summary: create a wallet, this is only available for Elite users
+      responses:
+        '201':
+          description: created
+          content:
+            application/json:
+                schema: WalletResponse
+      tags:
+          - wallet
+    """
     try:
         data = request.get_json()
         wallet = Wallet(currency=data["currency"], user_id=g.user.id)
         db.session.add(wallet)
         db.session.commit()
         user.wallet.append(wallet)
-        return jsonify(status=ok, data=wallet.serialize)
+        return jsonify(status=ok, data=wallet.serialize), 201
     except Exception as e:
         logging.error(e)
         return jsonify(status=error, message=str(e)), 400
@@ -237,6 +436,25 @@ def create_wallet():
 @app.route("/fund", methods=["POST"])
 @auth.login_required
 def fund_wallet():
+    """
+    ---
+    post:
+      summary: fund a particular wallet
+      requestBody:
+        required: true
+        content:
+            application/json:
+                schema: Fund
+      responses:
+        '200':
+          description: success
+          content:
+            application/json:
+                schema: TransactionResponse
+      tags:
+          - user
+          - admin
+    """
     try:
         required = ["currency", "amount", "receiver"]
         data = request.get_json()
@@ -301,6 +519,24 @@ def fund_wallet():
 @auth.login_required
 @permission_required(Permissions.CAN_WITHDRAW)
 def withdraw():
+    """
+    ---
+    post:
+      summary: Withdraw from a particular wallet 
+      requestBody:
+        required: true
+        content:
+            application/json:
+                schema: Withdraw
+      responses:
+        '200':
+          description: success
+          content:
+            application/json:
+                schema: NormalResponse
+      tags:
+          - user
+    """
     data = request.get_json()
     required = ["currency", "amount"]
     if not all([rq in data for rq in required]):
@@ -309,16 +545,15 @@ def withdraw():
     amount = data["amount"]
     wallet = g.user.wallet.filter_by(currency=currency).first()
     if wallet is None or (g.user.role.name == "Elite" and (bool(wallet) and wallet.balance < amount)):
-        wallet = g.user.wallet.filter_by(currency=g.user.main_currency.lower()).first()
+        wallet = g.user.wallet.filter_by(
+            currency=g.user.main_currency.lower()).first()
         amount = CurrencyUtils.convert_currency(
             currency, wallet.currency, amount)
     if wallet.balance < amount:
         return jsonify(status=error, message="Insufficent Funds!"), 400
     isapproved = True if g.user.role.name != "Noob" else False
     tx = Transaction(sender=wallet.id, receiver=None, at=datetime.datetime.utcnow(),
-     amount=amount, currency=wallet.currency, isapproved=isapproved)
+                     amount=amount, currency=wallet.currency, isapproved=isapproved)
     db.session.add(tx)
     db.session.commit()
     return jsonify(status=ok, message="Transaction successful."), 200
-
-
