@@ -64,7 +64,7 @@ def get_user(id):
     return jsonify(user.serialize), 200
 
 
-@app.route("/users/<int:id>/change-role")
+@app.route("/users/<int:id>/change-role", methods=["POST"])
 @auth.login_required
 @permission_required(Permissions.CHANGE_ROLE)
 def change_user_role(id):
@@ -82,7 +82,7 @@ def change_user_role(id):
     return jsonify(status=ok), 200
 
 
-@app.route("/users/<int:id>/change-maincurrency")
+@app.route("/users/<int:id>/change-maincurrency", methods=["POST"])
 @auth.login_required
 @permission_required(Permissions.CHANGE_CURRENCY)
 def change_user_maincurrency(id):
@@ -95,7 +95,7 @@ def change_user_maincurrency(id):
     if not CurrencyUtils.iscurrency_valid(currency):
         return jsonify(status=error, message="Please Enter a valid Currency code"), 400
     if not user.wallet.filter_by(currency=currency).first():
-        new_wallet = Wallet(currency=currency, user_id=receiver.id)
+        new_wallet = Wallet(currency=currency, user_id=user.id)
         db.session.add(new_wallet)
         db.session.commit()
 
@@ -165,7 +165,7 @@ def register():
         db.session.commit()
         user.wallet.append(default_wallet)
 
-    return jsonify(status=ok, token=user.generate_web_token()), 201
+    return jsonify(status=ok, token=user.generate_web_token(), user=user.serialize), 201
 
 
 @app.route("/users/login", methods=["POST"])
@@ -182,7 +182,7 @@ def login():
         logging.error(e)
         return jsonify(status=error, message=str(e)), 400
 
-    return jsonify(status=ok, token=user.generate_web_token(), user=user.serialize), 201
+    return jsonify(status=ok, token=user.generate_web_token(), user=user.serialize), 200
 
 
 @app.route("/wallets")
@@ -235,13 +235,13 @@ def create_wallet():
 @auth.login_required
 def fund_wallet():
     try:
-        required = ["currency", "amount", "receiverid"]
+        required = ["currency", "amount", "receiver"]
         data = request.get_json()
         if not all([rq in data.keys() for rq in required]):
             return jsonify(status=error, message="Missing Required JSON Field!")
         amount = data["amount"]
         currency = data["currency"]
-        receiver_id = data["receiverid"]
+        receiver_id = data["receiver"]
         if not CurrencyUtils.iscurrency_valid(currency):
             return jsonify(status=error, message="Please Enter a valid Currency code"), 400
         if g.user.role.name != "Admin":
@@ -287,7 +287,7 @@ def fund_wallet():
         db.session.add(tx)
         db.session.commit()
 
-        return jsonify(status=ok, data=tx.serialize)
+        return jsonify(status=ok, data=tx.serialize), 200
 
     except SyntaxError as e:
         logging.error(e)
@@ -310,7 +310,7 @@ def withdraw():
         amount = CurrencyUtils.convert_currency(
             currency, wallet.currency, amount)
     if wallet.balance < amount:
-        return jsonify("Insufficent Funds!"), 400
+        return jsonify(status=error, message="Insufficent Funds!"), 400
     isapproved = True if g.user.role.name != "Noob" else False
     tx = Transaction(sender=wallet.id, receiver=None, at=datetime.datetime.utcnow(),
      amount=amount, currency=wallet.currency, isapproved=isapproved)
