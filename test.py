@@ -124,7 +124,7 @@ class TestRestApi(unittest.TestCase):
         headers={"Authorization": _basic_auth_str(admin_token, "pass"), "Content-Type": "application/json"}
         req = self.app.post("/users/{}/change-role?role={}".format(noob["id"], "elite"), headers=headers)
         self.assertEqual(req.status_code, 200)
-        user = self.app.get("/users/{}".format(noob["id"]), headers=headers).json["role"]
+        user = self.app.get("/users/{}".format(noob["id"]), headers=headers).json["data"]["role"]
         self.assertEqual(user.lower(), "elite")
 
 
@@ -134,7 +134,7 @@ class TestRestApi(unittest.TestCase):
         headers={"Authorization": _basic_auth_str(admin_token, "pass"), "Content-Type": "application/json"}
         req = self.app.post("/users/{}/change-maincurrency?currency={}".format(noob["id"], "usd"), headers=headers)
         self.assertEqual(req.status_code, 200)
-        user = self.app.get("/users/{}".format(noob["id"]), headers=headers).json["main_currency"]
+        user = self.app.get("/users/{}".format(noob["id"]), headers=headers).json["data"]["main_currency"]
         self.assertEqual(user.lower(), "usd")
   
   
