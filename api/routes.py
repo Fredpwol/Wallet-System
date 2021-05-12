@@ -426,7 +426,7 @@ def create_wallet():
         wallet = Wallet(currency=data["currency"], user_id=g.user.id)
         db.session.add(wallet)
         db.session.commit()
-        user.wallet.append(wallet)
+        g.user.wallet.append(wallet)
         return jsonify(status=ok, data=wallet.serialize), 201
     except Exception as e:
         logging.error(e)
